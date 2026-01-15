@@ -6,8 +6,14 @@
     </div>
     
     <div class="log-content">
-      <div v-for="(log, i) in logs" :key="i" class="log-item">
-        {{ log }}
+      <div 
+        v-for="(log, i) in logs" 
+        :key="i" 
+        class="log-item"
+        :class="`log-${log.type}`"
+      >
+        <span class="log-time">[{{ log.time }}]</span>
+        <span class="log-message">{{ log.message }}</span>
       </div>
       <div v-if="logs.length === 0" class="empty-state">
         로그가 없습니다
@@ -17,8 +23,14 @@
 </template>
 
 <script setup lang="ts">
+interface LogItem {
+  time: string;
+  message: string;
+  type?: string;
+}
+
 defineProps<{
-  logs: string[]
+  logs: LogItem[]
 }>();
 
 const emit = defineEmits<{

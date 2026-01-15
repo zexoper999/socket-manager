@@ -9,74 +9,121 @@ export class SocketManager {
   private socket: Socket;
   private queue: QueueItem[] = [];
   public onStatusChange?: (isConnected: boolean) => void;
-  private logCallback: (msg: string) => void;
+  private logCallback: (msg: string, type?: string) => void;
+  private orderCounter = 0;
 
-  constructor(url: string, logCallback: (msg: string) => void) {
+  constructor(url: string, logCallback: (msg: string, type?: string) => void) {
     this.logCallback = logCallback;
     this.socket = io(url, { reconnection: true });
     this.setupListeners();
   }
 
+  private generateOrderId(): string {
+    this.orderCounter++;
+    return `ORD-${String(this.orderCounter).padStart(4, "0")}`;
+  }
+
   private setupListeners() {
     this.socket.on("connect", () => {
-      this.log("[Socket Connected]");
+      this.log("🟢 Socket 연결 성공", "system");
       this.onStatusChange?.(true);
       this.flushQueue(); // 재연결 시 큐 비우기
     });
 
     this.socket.on("disconnect", () => {
-      this.log("[Socket Disconnected]");
+      this.log("🔴 Socket 연결 끊김", "system");
       this.onStatusChange?.(false);
     });
   }
 
   // 주문 전송 (신뢰성 보장 로직)
   public sendOrder(orderData: any) {
-    const id = Math.random().toString().slice(2, 8);
-    this.log(`[Sending Order #${id}...]`);
+    const id = this.generateOrderId();
+    const menuName = orderData.menu;
+
+    this.log(
+      `📤 [${id}] 클라이언트 요청: "${menuName}" 주문 전송 중...`,
+      "client"
+    );
 
     // 1. 연결 안 됐으면 바로 큐에 저장
     if (!this.socket.connected) {
-      this.log(`[Offline -> Saved to Queue (#${id})]`);
-      this.queue.push({ id, data: orderData });
-      return;
+      this.log(
+        `⚠️ [${id}] 오프라인 상태 -> 큐에 저장 (재연결 시 자동 재시도)`,
+        "warning"
+      );
+      this.queue.push({ id, data: { ...orderData, orderId: id } });
+      return id;
     }
 
     // 2. 전송 및 ACK 대기
     let isAckReceived = false;
 
-    this.socket.emit("order:create", { ...orderData, id }, (res: any) => {
-      isAckReceived = true;
-      if (res.status === "ok") {
-        this.log(`[Success (#${id})]`);
+    this.socket.emit(
+      "order:create",
+      { ...orderData, orderId: id },
+      (res: any) => {
+        isAckReceived = true;
+        if (res.status === "ok") {
+          this.log(
+            `📥 [${id}] 서버 응답: "${menuName}" 주문 처리 완료 ✅`,
+            "server"
+          );
+        }
       }
-    });
+    );
 
     // 3. 타임아웃 처리 (서버 무응답 시)
     setTimeout(() => {
       if (!isAckReceived) {
-        this.log(`[Timeout -> Retrying later (#${id})]`);
-        this.queue.push({ id, data: orderData });
+        this.log(
+          `⏱️ [${id}] 서버 무응답 (Timeout) -> 큐에 저장 후 재시도 예정`,
+          "error"
+        );
+        this.queue.push({ id, data: { ...orderData, orderId: id } });
       }
     }, 2000); // 2초 대기
+
+    return id;
   }
 
   // 큐 비우기 (재시도)
   private flushQueue() {
     if (this.queue.length === 0) return;
 
-    this.log(`[Flushing Queue (${this.queue.length} items)...]`);
+    this.log(
+      `🔄 큐에 저장된 ${this.queue.length}개 주문 재전송 시작...`,
+      "system"
+    );
     const backup = [...this.queue];
     this.queue = [];
 
     backup.forEach((item) => {
-      this.log(`[Retrying Order #${item.id}]`);
-      this.sendOrder(item.data);
+      const menuName = item.data.menu;
+      this.log(`🔁 [${item.id}] "${menuName}" 재시도 중...`, "retry");
+
+      // 재시도 시에는 새로운 ID를 생성하지 않고 기존 ID 유지
+      let isAckReceived = false;
+      this.socket.emit("order:create", item.data, (res: any) => {
+        isAckReceived = true;
+        if (res.status === "ok") {
+          this.log(
+            `📥 [${item.id}] 서버 응답: "${menuName}" 재시도 성공 ✅`,
+            "server"
+          );
+        }
+      });
+
+      setTimeout(() => {
+        if (!isAckReceived) {
+          this.log(`❌ [${item.id}] "${menuName}" 재시도 실패`, "error");
+        }
+      }, 2000);
     });
   }
 
-  private log(msg: string) {
+  private log(msg: string, type?: string) {
     console.log(msg);
-    this.logCallback(msg);
+    this.logCallback(msg, type);
   }
 }

@@ -33,17 +33,27 @@ import OrderPanel from "./components/OrderPanel.vue";
 import OrderDashboard from "./components/OrderDashboard.vue";
 import LogPanel from "./components/LogPanel.vue";
 
+interface LogItem {
+  time: string;
+  message: string;
+  type?: string;
+}
+
 const isConnected = ref(false);
-const logs = ref<string[]>([]);
+const logs = ref<LogItem[]>([]);
 const orders = ref<any[]>([]);
 
 let socketManager: SocketManager;
 
 onMounted(() => {
   // 소켓 매니저 초기화
-  socketManager = new SocketManager("http://localhost:3005", (msg) => {
+  socketManager = new SocketManager("http://localhost:3005", (msg, type) => {
     const time = new Date().toLocaleTimeString();
-    logs.value.unshift(`[${time}] ${msg}`);
+    logs.value.unshift({
+      time,
+      message: msg,
+      type: type || "info",
+    });
   });
 
   // 연결 상태 감지
@@ -53,11 +63,11 @@ onMounted(() => {
 });
 
 const handleOrder = (orderData: any) => {
-  socketManager.sendOrder(orderData);
+  const orderId = socketManager.sendOrder(orderData);
 
   // 대시보드에 주문 추가
   orders.value.unshift({
-    id: Math.random().toString().slice(2, 8),
+    id: orderId,
     time: new Date().toLocaleTimeString(),
     ...orderData,
     status: "pending",
