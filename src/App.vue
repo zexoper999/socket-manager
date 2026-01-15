@@ -2,8 +2,20 @@
   <div class="app-container">
     <header>
       <h1>Real Time Order System</h1>
-      <div class="status-badge" :class="{ connected: isConnected }">
-        {{ isConnected ? "● Connected" : "○ Disconnected" }}
+      <div class="header-right">
+        <button
+          v-if="isConnected"
+          @click="disconnectTest"
+          class="test-btn disconnect"
+        >
+          연결 끊기
+        </button>
+        <button v-else @click="connectTest" class="test-btn connect">
+          재연결
+        </button>
+        <div class="status-badge" :class="{ connected: isConnected }">
+          {{ isConnected ? "● Connected" : "○ Disconnected" }}
+        </div>
       </div>
     </header>
 
@@ -84,5 +96,15 @@ const handleOrder = (orderData: any) => {
 
 const clearLogs = () => {
   logs.value = [];
+};
+
+// 테스트용: 연결 끊기
+const disconnectTest = () => {
+  socketManager.disconnect();
+};
+
+// 테스트용: 다시 연결
+const connectTest = () => {
+  socketManager.connect();
 };
 </script>

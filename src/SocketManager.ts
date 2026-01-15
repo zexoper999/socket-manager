@@ -138,4 +138,16 @@ export class SocketManager {
     console.log(msg);
     this.logCallback(msg, type);
   }
+
+  // 테스트용: 연결 끊기
+  public disconnect() {
+    this.log("🔌 연결 수동 종료 (테스트)", "warning");
+    this.socket.disconnect();
+  }
+
+  // 테스트용: 다시 연결
+  public connect() {
+    this.log("🔌 연결 재시도 중...", "system");
+    this.socket.connect();
+  }
 }
