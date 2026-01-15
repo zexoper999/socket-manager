@@ -9,6 +9,7 @@ export class SocketManager {
   private socket: Socket;
   private queue: QueueItem[] = [];
   public onStatusChange?: (isConnected: boolean) => void;
+  public onOrderStatusChange?: (orderId: string, status: string) => void;
   private logCallback: (msg: string, type?: string) => void;
   private orderCounter = 0;
 
@@ -45,6 +46,7 @@ export class SocketManager {
       `📤 [${id}] 클라이언트 요청: "${menuName}" 주문 전송 중...`,
       "client"
     );
+    this.onOrderStatusChange?.(id, "processing");
 
     // 1. 연결 안 됐으면 바로 큐에 저장
     if (!this.socket.connected) {
@@ -53,6 +55,7 @@ export class SocketManager {
         "warning"
       );
       this.queue.push({ id, data: { ...orderData, orderId: id } });
+      this.onOrderStatusChange?.(id, "queued");
       return id;
     }
 
@@ -69,6 +72,7 @@ export class SocketManager {
             `📥 [${id}] 서버 응답: "${menuName}" 주문 처리 완료 ✅`,
             "server"
           );
+          this.onOrderStatusChange?.(id, "completed");
         }
       }
     );
@@ -81,6 +85,7 @@ export class SocketManager {
           "error"
         );
         this.queue.push({ id, data: { ...orderData, orderId: id } });
+        this.onOrderStatusChange?.(id, "queued");
       }
     }, 2000); // 2초 대기
 
@@ -101,6 +106,7 @@ export class SocketManager {
     backup.forEach((item) => {
       const menuName = item.data.menu;
       this.log(`🔁 [${item.id}] "${menuName}" 재시도 중...`, "retry");
+      this.onOrderStatusChange?.(item.id, "retrying");
 
       // 재시도 시에는 새로운 ID를 생성하지 않고 기존 ID 유지
       let isAckReceived = false;
@@ -111,12 +117,18 @@ export class SocketManager {
             `📥 [${item.id}] 서버 응답: "${menuName}" 재시도 성공 ✅`,
             "server"
           );
+          this.onOrderStatusChange?.(item.id, "completed");
         }
       });
 
       setTimeout(() => {
         if (!isAckReceived) {
-          this.log(`❌ [${item.id}] "${menuName}" 재시도 실패`, "error");
+          this.log(
+            `❌ [${item.id}] "${menuName}" 재시도 실패 (큐에 재저장)`,
+            "error"
+          );
+          this.queue.push(item); // 다시 큐에 저장
+          this.onOrderStatusChange?.(item.id, "failed");
         }
       }, 2000);
     });

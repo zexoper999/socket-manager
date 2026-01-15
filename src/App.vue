@@ -60,6 +60,14 @@ onMounted(() => {
   socketManager.onStatusChange = (status) => {
     isConnected.value = status;
   };
+
+  // 주문 상태 변경 감지
+  socketManager.onOrderStatusChange = (orderId, status) => {
+    const order = orders.value.find((o) => o.id === orderId);
+    if (order) {
+      order.status = status;
+    }
+  };
 });
 
 const handleOrder = (orderData: any) => {
@@ -70,7 +78,7 @@ const handleOrder = (orderData: any) => {
     id: orderId,
     time: new Date().toLocaleTimeString(),
     ...orderData,
-    status: "pending",
+    status: "processing",
   });
 };
 

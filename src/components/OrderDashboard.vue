@@ -1,10 +1,10 @@
 <template>
   <div class="order-dashboard">
     <h2>📋 주문 현황</h2>
-    
+
     <div class="order-list">
-      <div 
-        v-for="order in orders" 
+      <div
+        v-for="order in orders"
         :key="order.id"
         class="order-card"
         :class="order.status"
@@ -29,17 +29,18 @@
 
 <script setup lang="ts">
 defineProps<{
-  orders: any[]
+  orders: any[];
 }>();
 
 const getStatusText = (status: string) => {
   const statusMap: Record<string, string> = {
-    pending: '대기중',
-    processing: '처리중',
-    completed: '완료',
-    failed: '실패'
+    pending: "대기중",
+    processing: "전송중",
+    completed: "완료",
+    failed: "실패",
+    queued: "큐 대기",
+    retrying: "재시도중",
   };
   return statusMap[status] || status;
 };
 </script>
-
