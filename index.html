@@ -1,35 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>Socket Reliability System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real Time Order System</title>
   </head>
   <body>
-    <div id="app">
-      <h1>Socket Reliability System</h1>
-      <p>
-        Status:
-        <b :style="{ color: isConnected ? 'green' : 'red' }"
-          >{{ isConnected ? 'Connected' : 'Disconnected' }}</b
-        >
-      </p>
-
-      <button @click="sendOrder">☕ 주문하기 (Send Order)</button>
-      <button @click="clearLogs">로그 지우기</button>
-
-      <h3>Processing Logs:</h3>
-      <div
-        style="
-          background: #f4f4f4;
-          padding: 10px;
-          height: 300px;
-          overflow-y: scroll;
-          border: 1px solid #ddd;
-        "
-      >
-        <div v-for="(log, i) in logs" :key="i">{{ log }}</div>
-      </div>
-    </div>
+    <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
