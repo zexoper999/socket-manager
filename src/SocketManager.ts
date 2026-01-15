@@ -35,6 +35,19 @@ export class SocketManager {
       this.log("🔴 Socket 연결 끊김", "system");
       this.onStatusChange?.(false);
     });
+
+    // 네트워크 상태 감지 (터널, 비행기 모드 등)
+    if (typeof window !== "undefined") {
+      window.addEventListener("offline", () => {
+        this.log("⚠️ 네트워크 오프라인 감지", "warning");
+        this.onStatusChange?.(false);
+      });
+
+      window.addEventListener("online", () => {
+        this.log("🟢 네트워크 온라인 복구", "system");
+        // Socket 재연결은 자동으로 시도됨
+      });
+    }
   }
 
   // 주문 전송 (신뢰성 보장 로직)
@@ -48,8 +61,12 @@ export class SocketManager {
     );
     this.onOrderStatusChange?.(id, "processing");
 
-    // 1. 연결 안 됐으면 바로 큐에 저장
-    if (!this.socket.connected) {
+    // 1. 연결 안 됐거나 오프라인이면 바로 큐에 저장
+    const isOffline =
+      !this.socket.connected ||
+      (typeof navigator !== "undefined" && !navigator.onLine);
+
+    if (isOffline) {
       this.log(
         `⚠️ [${id}] 오프라인 상태 -> 큐에 저장 (재연결 시 자동 재시도)`,
         "warning"
