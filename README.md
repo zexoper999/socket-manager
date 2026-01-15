@@ -28,12 +28,16 @@
 
 ## ✨ 핵심 기능
 
-**1. 스마트 주문 큐 시스템**
+**1. 다층 방어 네트워크 감지**
 
 ```
-주문 전송 → 연결 확인
-  ├─ 연결됨: 즉시 전송 + ACK 대기
-  └─ 끊김: 큐에 저장 → 재연결 시 자동 재시도
+주문 시도
+  ↓
+1차: Socket 연결 상태 체크 (socket.connected)
+2차: 브라우저 네트워크 상태 체크 (navigator.onLine)
+3차: ACK Timeout 감지 (2초)
+  ↓
+오프라인 → 큐에 저장 → 재연결 시 자동 재시도
 ```
 
 **2. 실시간 주문 상태 추적**
@@ -84,31 +88,29 @@ npm run dev
 
 ### SocketManager 클래스
 
-**신뢰성 있는 주문 전송**
+**신뢰성 있는 주문 전송 (3단계 방어)**
 
 ```typescript
 public sendOrder(orderData: any) {
-  const id = this.generateOrderId(); // ORD-0001, ORD-0002...
+  const id = this.generateOrderId();
 
-  // 1. 오프라인 체크
-  if (!this.socket.connected) {
+  // 1차 방어: Socket + 브라우저 네트워크 상태 체크
+  const isOffline = !this.socket.connected || !navigator.onLine;
+  if (isOffline) {
     this.queue.push({ id, data: orderData });
-    this.onOrderStatusChange?.(id, "queued");
     return id;
   }
 
-  // 2. ACK 패턴으로 전송
+  // 2차 방어: ACK 패턴
   let isAckReceived = false;
   this.socket.emit("order:create", orderData, (res) => {
     isAckReceived = true;
-    this.onOrderStatusChange?.(id, "completed");
   });
 
-  // 3. Timeout 처리 (2초)
+  // 3차 방어: Timeout (2초)
   setTimeout(() => {
     if (!isAckReceived) {
-      this.queue.push({ id, data: orderData });
-      this.onOrderStatusChange?.(id, "queued");
+      this.queue.push({ id, data: orderData }); // 큐 저장
     }
   }, 2000);
 }
