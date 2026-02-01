@@ -3,6 +3,7 @@ import { io, Socket } from "socket.io-client";
 interface QueueItem {
   id: string;
   data: any;
+  retryCount: number; // 재시도 횟수 추적
 }
 
 export class SocketManager {
@@ -12,6 +13,8 @@ export class SocketManager {
   public onOrderStatusChange?: (orderId: string, status: string) => void;
   private logCallback: (msg: string, type?: string) => void;
   private orderCounter = 0;
+  private readonly MAX_RETRY_COUNT = 3; // 최대 재시도 횟수
+  private processedOrders = new Set<string>(); // 처리 완료된 주문 추적
 
   constructor(url: string, logCallback: (msg: string, type?: string) => void) {
     this.logCallback = logCallback;
@@ -71,7 +74,11 @@ export class SocketManager {
         `⚠️ [${id}] 오프라인 상태 -> 큐에 저장 (재연결 시 자동 재시도)`,
         "warning"
       );
-      this.queue.push({ id, data: { ...orderData, orderId: id } });
+      this.queue.push({ 
+        id, 
+        data: { ...orderData, orderId: id },
+        retryCount: 0 
+      });
       this.onOrderStatusChange?.(id, "queued");
       return id;
     }
@@ -89,19 +96,28 @@ export class SocketManager {
             `📥 [${id}] 서버 응답: "${menuName}" 주문 처리 완료 ✅`,
             "server"
           );
+          // 중복 방지: 처리 완료된 주문 기록
+          this.processedOrders.add(id);
           this.onOrderStatusChange?.(id, "completed");
+          
+          // 큐에서 제거 (혹시 타임아웃으로 추가되었을 경우 대비)
+          this.removeFromQueue(id);
         }
       }
     );
 
     // 3. 타임아웃 처리 (서버 무응답 시)
     setTimeout(() => {
-      if (!isAckReceived) {
+      if (!isAckReceived && !this.processedOrders.has(id)) {
         this.log(
           `⏱️ [${id}] 서버 무응답 (Timeout) -> 큐에 저장 후 재시도 예정`,
           "error"
         );
-        this.queue.push({ id, data: { ...orderData, orderId: id } });
+        this.queue.push({ 
+          id, 
+          data: { ...orderData, orderId: id },
+          retryCount: 0 
+        });
         this.onOrderStatusChange?.(id, "queued");
       }
     }, 2000); // 2초 대기
@@ -121,11 +137,36 @@ export class SocketManager {
     this.queue = [];
 
     backup.forEach((item) => {
+      // 이미 처리된 주문은 스킵 (중복 방지)
+      if (this.processedOrders.has(item.id)) {
+        this.log(
+          `⏭️ [${item.id}] 이미 처리된 주문 (스킵)`,
+          "system"
+        );
+        return;
+      }
+
+      // 최대 재시도 횟수 초과 확인
+      if (item.retryCount >= this.MAX_RETRY_COUNT) {
+        this.log(
+          `❌ [${item.id}] 최대 재시도 횟수(${this.MAX_RETRY_COUNT}회) 초과 -> 실패 처리`,
+          "error"
+        );
+        this.onOrderStatusChange?.(item.id, "failed");
+        return;
+      }
+
       const menuName = item.data.menu;
-      this.log(`🔁 [${item.id}] "${menuName}" 재시도 중...`, "retry");
+      const retryNum = item.retryCount + 1;
+      this.log(
+        `🔁 [${item.id}] "${menuName}" ${retryNum}번째 재시도 중... (최대 ${this.MAX_RETRY_COUNT}회)`,
+        "retry"
+      );
       this.onOrderStatusChange?.(item.id, "retrying");
 
-      // 재시도 시에는 새로운 ID를 생성하지 않고 기존 ID 유지
+      // 재시도 카운트 증가
+      item.retryCount++;
+
       let isAckReceived = false;
       this.socket.emit("order:create", item.data, (res: any) => {
         isAckReceived = true;
@@ -134,21 +175,42 @@ export class SocketManager {
             `📥 [${item.id}] 서버 응답: "${menuName}" 재시도 성공 ✅`,
             "server"
           );
+          // 중복 방지: 처리 완료된 주문 기록
+          this.processedOrders.add(item.id);
           this.onOrderStatusChange?.(item.id, "completed");
+          
+          // 큐에서 완전히 제거
+          this.removeFromQueue(item.id);
         }
       });
 
       setTimeout(() => {
-        if (!isAckReceived) {
+        if (!isAckReceived && !this.processedOrders.has(item.id)) {
           this.log(
-            `❌ [${item.id}] "${menuName}" 재시도 실패 (큐에 재저장)`,
+            `⏱️ [${item.id}] "${menuName}" ${retryNum}번째 재시도 실패`,
             "error"
           );
-          this.queue.push(item); // 다시 큐에 저장
-          this.onOrderStatusChange?.(item.id, "failed");
+          
+          // 아직 재시도 가능하면 큐에 다시 추가
+          if (item.retryCount < this.MAX_RETRY_COUNT) {
+            this.queue.push(item);
+            this.onOrderStatusChange?.(item.id, "queued");
+          } else {
+            this.onOrderStatusChange?.(item.id, "failed");
+          }
         }
       }, 2000);
     });
+  }
+
+  // 큐에서 특정 주문 제거 (중복 방지 헬퍼 메서드)
+  private removeFromQueue(orderId: string) {
+    const initialLength = this.queue.length;
+    this.queue = this.queue.filter(item => item.id !== orderId);
+    
+    if (this.queue.length < initialLength) {
+      this.log(`🗑️ [${orderId}] 큐에서 제거됨`, "system");
+    }
   }
 
   private log(msg: string, type?: string) {
