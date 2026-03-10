@@ -9,8 +9,17 @@ const io = new Server(PORT, {
   cors: { origin: "*" },
 });
 
-// 중복 방지: 처리된 주문 ID 추적
+// 중복 방지: 처리된 주문 ID 추적 (1시간 TTL로 자동 삭제)
 const processedOrders = new Set<string>();
+const PROCESSED_ORDER_TTL = 60 * 60 * 1000; // 1시간
+
+function addProcessedOrder(orderId: string) {
+  processedOrders.add(orderId);
+  setTimeout(() => {
+    processedOrders.delete(orderId);
+    console.log(`🗑️ [Server] [${orderId}] 처리 기록 만료 삭제`);
+  }, PROCESSED_ORDER_TTL);
+}
 
 console.log(`Socket Server running on port ${PORT}`);
 
@@ -44,17 +53,9 @@ io.on("connection", (socket) => {
 
     // 정상 처리: 1초 뒤에 성공 응답 보냄
     setTimeout(() => {
-      // 처리 완료된 주문으로 기록 (중복 방지)
-      processedOrders.add(orderId);
-
+      addProcessedOrder(orderId);
       console.log(`✅ [Server] [${orderId}] 처리 완료 -> ACK 전송`);
       callback({ status: "ok", orderId: orderId });
-
-      // // 메모리 관리: 1시간 후 삭제
-      // setTimeout(() => {
-      //   processedOrders.delete(orderId);
-      //   console.log(`🗑️ [Server] [${orderId}] 처리 기록 삭제 (메모리 정리)`);
-      // }, 3600000); // 1시간
     }, 1000);
   });
 
