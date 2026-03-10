@@ -13,8 +13,18 @@ export class SocketManager {
   public onOrderStatusChange?: (orderId: string, status: string) => void;
   private logCallback: (msg: string, type?: string) => void;
   private orderCounter = 0;
-  private readonly MAX_RETRY_COUNT = 3; // 최대 재시도 횟수
-  private processedOrders = new Set<string>(); // 처리 완료된 주문 추적
+  private readonly MAX_RETRY_COUNT = 3;
+  private processedOrders = new Set<string>();
+
+  // removeEventListener 시 동일 참조가 필요하므로 인스턴스에 저장
+  private handleOffline = () => {
+    this.log("⚠️ 네트워크 오프라인 감지", "warning");
+    this.onStatusChange?.(false);
+  };
+
+  private handleOnline = () => {
+    this.log("🟢 네트워크 온라인 복구", "system");
+  };
 
   constructor(url: string, logCallback: (msg: string, type?: string) => void) {
     this.logCallback = logCallback;
@@ -41,15 +51,8 @@ export class SocketManager {
 
     // 네트워크 상태 감지 (터널, 비행기 모드 등)
     if (typeof window !== "undefined") {
-      window.addEventListener("offline", () => {
-        this.log("⚠️ 네트워크 오프라인 감지", "warning");
-        this.onStatusChange?.(false);
-      });
-
-      window.addEventListener("online", () => {
-        this.log("🟢 네트워크 온라인 복구", "system");
-        // Socket 재연결은 자동으로 시도됨
-      });
+      window.addEventListener("offline", this.handleOffline);
+      window.addEventListener("online", this.handleOnline);
     }
   }
 
@@ -228,5 +231,22 @@ export class SocketManager {
   public connect() {
     this.log("🔌 연결 재시도 중...", "system");
     this.socket.connect();
+  }
+
+  // 리소스 정리 (컴포넌트 unmount 시 호출)
+  public destroy() {
+    this.socket.off("connect");
+    this.socket.off("disconnect");
+    this.socket.disconnect();
+
+    if (typeof window !== "undefined") {
+      window.removeEventListener("offline", this.handleOffline);
+      window.removeEventListener("online", this.handleOnline);
+    }
+
+    this.queue = [];
+    this.onStatusChange = undefined;
+    this.onOrderStatusChange = undefined;
+    this.log("🧹 SocketManager 정리 완료", "system");
   }
 }

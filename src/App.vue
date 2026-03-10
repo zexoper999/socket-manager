@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { SocketManager } from "./SocketManager";
 import OrderPanel from "./components/OrderPanel.vue";
 import OrderDashboard from "./components/OrderDashboard.vue";
@@ -199,4 +199,8 @@ const disconnectTest = () => {
 const connectTest = () => {
   socketManager.connect();
 };
+
+onUnmounted(() => {
+  socketManager?.destroy();
+});
 </script>
