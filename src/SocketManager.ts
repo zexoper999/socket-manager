@@ -14,6 +14,7 @@ export class SocketManager {
   private logCallback: (msg: string, type?: string) => void;
   private orderCounter = 0;
   private readonly MAX_RETRY_COUNT = 3;
+  private readonly PROCESSED_ORDER_TTL = 5 * 60 * 1000; // 5분
   private processedOrders = new Set<string>();
 
   // removeEventListener 시 동일 참조가 필요하므로 인스턴스에 저장
@@ -99,11 +100,8 @@ export class SocketManager {
             `📥 [${id}] 서버 응답: "${menuName}" 주문 처리 완료 ✅`,
             "server"
           );
-          // 중복 방지: 처리 완료된 주문 기록
-          this.processedOrders.add(id);
+          this.addProcessedOrder(id);
           this.onOrderStatusChange?.(id, "completed");
-          
-          // 큐에서 제거 (혹시 타임아웃으로 추가되었을 경우 대비)
           this.removeFromQueue(id);
         }
       }
@@ -178,11 +176,8 @@ export class SocketManager {
             `📥 [${item.id}] 서버 응답: "${menuName}" 재시도 성공 ✅`,
             "server"
           );
-          // 중복 방지: 처리 완료된 주문 기록
-          this.processedOrders.add(item.id);
+          this.addProcessedOrder(item.id);
           this.onOrderStatusChange?.(item.id, "completed");
-          
-          // 큐에서 완전히 제거
           this.removeFromQueue(item.id);
         }
       });
@@ -204,6 +199,14 @@ export class SocketManager {
         }
       }, 2000);
     });
+  }
+
+  // 처리 완료 주문 기록 후 TTL 만료 시 자동 삭제
+  private addProcessedOrder(orderId: string) {
+    this.processedOrders.add(orderId);
+    setTimeout(() => {
+      this.processedOrders.delete(orderId);
+    }, this.PROCESSED_ORDER_TTL);
   }
 
   // 큐에서 특정 주문 제거 (중복 방지 헬퍼 메서드)
